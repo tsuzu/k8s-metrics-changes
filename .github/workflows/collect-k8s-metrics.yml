@@ -63,7 +63,7 @@ jobs:
         git commit -m "Add Kubernetes ${{ github.event.inputs.kubernetes_version }} metrics documentation"
 
         # Push branch
-        git push origin "$BRANCH_NAME"
+        git push --force origin "$BRANCH_NAME"
 
         # Create pull request using GitHub CLI
         gh pr create \
