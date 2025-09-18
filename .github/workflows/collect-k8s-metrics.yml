@@ -1,0 +1,53 @@
+name: Collect Kubernetes Metrics
+
+on:
+  workflow_dispatch:
+    inputs:
+      kubernetes_version:
+        description: 'Kubernetes version (e.g., v1.28.0)'
+        required: true
+        type: string
+
+jobs:
+  collect-metrics:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout this repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Clone Kubernetes repository
+      run: |
+        git clone --depth 1 --branch ${{ github.event.inputs.kubernetes_version }} https://github.com/kubernetes/kubernetes.git k8s-temp
+
+    - name: Run metrics documentation script
+      run: |
+        cd k8s-temp
+        bash test/instrumentation/update-documentation-metrics.sh
+
+    - name: Create instrumentations directory
+      run: |
+        mkdir -p instrumentations
+
+    - name: Copy generated metrics file
+      run: |
+        cp k8s-temp/test/instrumentation/documentation/documentation-list.yaml instrumentations/${{ github.event.inputs.kubernetes_version }}.yaml
+
+    - name: Clean up temporary files
+      run: |
+        rm -rf k8s-temp
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add instrumentations/v${{ github.event.inputs.kubernetes_version }}.yaml
+        git commit -m "Add Kubernetes ${{ github.event.inputs.kubernetes_version }} metrics documentation"
+        git push
