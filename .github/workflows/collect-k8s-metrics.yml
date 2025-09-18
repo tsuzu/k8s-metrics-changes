@@ -14,18 +14,18 @@ jobs:
 
     steps:
     - name: Checkout this repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.21'
 
     - name: Clone Kubernetes repository
       run: |
         git clone --depth 1 --branch ${{ github.event.inputs.kubernetes_version }} https://github.com/kubernetes/kubernetes.git k8s-temp
+
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: 'k8s-temp/go.mod'
 
     - name: Run metrics documentation script
       run: |
