@@ -29,11 +29,7 @@ jobs:
 
     - name: Run metrics documentation script
       run: |
-        export TERM=dumb
-        bash --version
-        cd k8s-temp
-        ls ./test/instrumentation/stability-utils.sh
-        cat ./test/instrumentation/stability-utils.sh
+        export TERM=xterm
         ./test/instrumentation/update-documentation-metrics.sh
 
     - name: Create instrumentations directory
