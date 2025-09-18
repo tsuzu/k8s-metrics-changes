@@ -30,8 +30,9 @@ jobs:
     - name: Run metrics documentation script
       run: |
         export TERM=vt100
+        bash --version
         cd k8s-temp
-        bash test/instrumentation/update-documentation-metrics.sh
+        ./test/instrumentation/update-documentation-metrics.sh
 
     - name: Create instrumentations directory
       run: |
