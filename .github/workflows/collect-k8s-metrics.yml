@@ -44,10 +44,27 @@ jobs:
       run: |
         rm -rf k8s-temp
 
-    - name: Commit and push changes
+    - name: Create pull request
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add instrumentations/v${{ github.event.inputs.kubernetes_version }}.yaml
+
+        # Create a new branch
+        BRANCH_NAME="metrics/${{ github.event.inputs.kubernetes_version }}"
+        git checkout -b "$BRANCH_NAME"
+
+        # Add and commit changes
+        git add instrumentations/${{ github.event.inputs.kubernetes_version }}.yaml
         git commit -m "Add Kubernetes ${{ github.event.inputs.kubernetes_version }} metrics documentation"
-        git push
+
+        # Push branch
+        git push origin "$BRANCH_NAME"
+
+        # Create pull request using GitHub CLI
+        gh pr create \
+          --title "Add Kubernetes ${{ github.event.inputs.kubernetes_version }} metrics documentation" \
+          --body "Automatically generated metrics documentation for Kubernetes ${{ github.event.inputs.kubernetes_version }}" \
+          --base main \
+          --head "$BRANCH_NAME"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
