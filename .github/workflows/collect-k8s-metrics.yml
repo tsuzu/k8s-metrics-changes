@@ -56,7 +56,7 @@ jobs:
 
         # Create a new branch
         BRANCH_NAME="metrics/${{ github.event.inputs.kubernetes_version }}"
-        git checkout -b "$BRANCH_NAME"
+        git checkout -b "$BRANCH_NAME" main
 
         # Add and commit changes
         git add instrumentations/${{ github.event.inputs.kubernetes_version }}.yaml
