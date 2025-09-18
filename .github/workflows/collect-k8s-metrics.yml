@@ -30,6 +30,7 @@ jobs:
     - name: Run metrics documentation script
       run: |
         export TERM=xterm
+        cd k8s-temp
         ./test/instrumentation/update-documentation-metrics.sh
 
     - name: Create instrumentations directory
