@@ -32,6 +32,7 @@ jobs:
         export TERM=vt100
         bash --version
         cd k8s-temp
+        source ./test/instrumentation/stability-utils.sh
         ./test/instrumentation/update-documentation-metrics.sh
 
     - name: Create instrumentations directory
