@@ -32,6 +32,8 @@ jobs:
         export TERM=vt100
         bash --version
         cd k8s-temp
+        ls ./test/instrumentation/stability-utils.sh
+        cat ./test/instrumentation/stability-utils.sh
         source ./test/instrumentation/stability-utils.sh
         ./test/instrumentation/update-documentation-metrics.sh
 
