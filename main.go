@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -211,12 +212,12 @@ func equalFloat64Slices(a, b []float64) bool {
 	return true
 }
 
-func printMarkdownTable(diffs []MetricDiff) {
-	fmt.Println("# Kubernetes Metrics Changes: v1.33.0 → v1.34.0")
+func printMarkdownTable(diffs []MetricDiff, oldVersion, newVersion string) {
+	fmt.Printf("# Kubernetes Metrics Changes: %s → %s\n", oldVersion, newVersion)
 	fmt.Println()
 
 	if len(diffs) == 0 {
-		fmt.Println("No differences found between v1.33.0 and v1.34.0.")
+		fmt.Printf("No differences found between %s and %s.\n", oldVersion, newVersion)
 		return
 	}
 
@@ -336,9 +337,15 @@ func unifiedDiffWithoutHeader(old, new string) string {
 	return strings.Join(lines[3:], "\n")
 }
 
+func versionFromPath(path string) string {
+	base := filepath.Base(path)
+
+	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <v1.33.0.yaml> <v1.34.0.yaml>\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <old.yaml> <new.yaml>\n", os.Args[0])
 		os.Exit(1)
 	}
 
@@ -355,6 +362,9 @@ func main() {
 		log.Fatalf("Error loading %s: %v", newFile, err)
 	}
 
+	oldVersion := versionFromPath(oldFile)
+	newVersion := versionFromPath(newFile)
+
 	diffs := compareMetrics(oldMetrics, newMetrics)
-	printMarkdownTable(diffs)
+	printMarkdownTable(diffs, oldVersion, newVersion)
 }
