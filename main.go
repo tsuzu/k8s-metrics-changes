@@ -4,30 +4,25 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type Metric struct {
-	Name           string   `yaml:"name"`
-	Namespace      string   `yaml:"namespace,omitempty"`
-	Subsystem      string   `yaml:"subsystem,omitempty"`
-	Help           string   `yaml:"help"`
-	Type           string   `yaml:"type"`
-	StabilityLevel string   `yaml:"stabilityLevel"`
-	Labels         []string `yaml:"labels,omitempty"`
+	Name           string    `yaml:"name"`
+	Namespace      string    `yaml:"namespace,omitempty"`
+	Subsystem      string    `yaml:"subsystem,omitempty"`
+	Help           string    `yaml:"help"`
+	Type           string    `yaml:"type"`
+	StabilityLevel string    `yaml:"stabilityLevel"`
+	Labels         []string  `yaml:"labels,omitempty"`
 	Buckets        []float64 `yaml:"buckets,omitempty"`
 }
 
-type MetricKey struct {
-	Namespace string
-	Subsystem string
-	Name      string
-}
-
-func (m MetricKey) String() string {
+func metricKey(m Metric) string {
 	var parts []string
 	if m.Namespace != "" {
 		parts = append(parts, m.Namespace)
@@ -39,7 +34,7 @@ func (m MetricKey) String() string {
 	return strings.Join(parts, "_")
 }
 
-func loadMetrics(filename string) (map[MetricKey]Metric, error) {
+func loadMetrics(filename string) (map[string]Metric, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -51,13 +46,9 @@ func loadMetrics(filename string) (map[MetricKey]Metric, error) {
 		return nil, err
 	}
 
-	metricMap := make(map[MetricKey]Metric)
+	metricMap := make(map[string]Metric)
 	for _, metric := range metrics {
-		key := MetricKey{
-			Namespace: metric.Namespace,
-			Subsystem: metric.Subsystem,
-			Name:      metric.Name,
-		}
+		key := metricKey(metric)
 		metricMap[key] = metric
 	}
 
@@ -67,20 +58,20 @@ func loadMetrics(filename string) (map[MetricKey]Metric, error) {
 type DiffType string
 
 const (
-	Added    DiffType = "Added"
-	Removed  DiffType = "Removed"
-	Modified DiffType = "Modified"
+	Added   DiffType = "Added"
+	Removed DiffType = "Removed"
+	Updated DiffType = "Updated"
 )
 
 type MetricDiff struct {
-	Key        MetricKey
-	Type       DiffType
-	OldMetric  *Metric
-	NewMetric  *Metric
-	Changes    []string
+	Key       string
+	Type      DiffType
+	OldMetric *Metric
+	NewMetric *Metric
+	Changes   []string
 }
 
-func compareMetrics(old, new map[MetricKey]Metric) []MetricDiff {
+func compareMetrics(old, new map[string]Metric) []MetricDiff {
 	var diffs []MetricDiff
 
 	// Find added and modified metrics
@@ -89,32 +80,33 @@ func compareMetrics(old, new map[MetricKey]Metric) []MetricDiff {
 			// Check for modifications
 			var changes []string
 			if oldMetric.Help != newMetric.Help {
-				changes = append(changes, "Help text changed")
+				changes = append(changes, "Help text changed.")
 			}
 			if oldMetric.Type != newMetric.Type {
-				changes = append(changes, fmt.Sprintf("Type changed from %s to %s", oldMetric.Type, newMetric.Type))
+				changes = append(changes, fmt.Sprintf("Type changed from `%s` to `%s`.", oldMetric.Type, newMetric.Type))
 			}
 			if oldMetric.StabilityLevel != newMetric.StabilityLevel {
-				changes = append(changes, fmt.Sprintf("Stability level changed from %s to %s", oldMetric.StabilityLevel, newMetric.StabilityLevel))
+				changes = append(changes, fmt.Sprintf("Stability level changed from `%s` to `%s`.", oldMetric.StabilityLevel, newMetric.StabilityLevel))
 			}
 			if oldMetric.Namespace != newMetric.Namespace {
-				changes = append(changes, fmt.Sprintf("Namespace changed from '%s' to '%s'", oldMetric.Namespace, newMetric.Namespace))
+				changes = append(changes, fmt.Sprintf("Namespace changed from '%s' to '%s'.", oldMetric.Namespace, newMetric.Namespace))
 			}
 
 			// Compare labels
 			if !equalStringSlices(oldMetric.Labels, newMetric.Labels) {
-				changes = append(changes, "Labels changed")
+				labelDiff := compareLabelSlices(oldMetric.Labels, newMetric.Labels)
+				changes = append(changes, labelDiff)
 			}
 
 			// Compare buckets
 			if !equalFloat64Slices(oldMetric.Buckets, newMetric.Buckets) {
-				changes = append(changes, "Buckets changed")
+				changes = append(changes, "Buckets changed.")
 			}
 
 			if len(changes) > 0 {
 				diffs = append(diffs, MetricDiff{
 					Key:       key,
-					Type:      Modified,
+					Type:      Updated,
 					OldMetric: &oldMetric,
 					NewMetric: &newMetric,
 					Changes:   changes,
@@ -143,7 +135,7 @@ func compareMetrics(old, new map[MetricKey]Metric) []MetricDiff {
 
 	// Sort diffs by key for consistent output
 	sort.Slice(diffs, func(i, j int) bool {
-		return diffs[i].Key.String() < diffs[j].Key.String()
+		return diffs[i].Key < diffs[j].Key
 	})
 
 	return diffs
@@ -159,6 +151,52 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func compareLabelSlices(oldLabels, newLabels []string) string {
+	oldSet := make(map[string]bool)
+	newSet := make(map[string]bool)
+
+	for _, label := range oldLabels {
+		oldSet[label] = true
+	}
+	for _, label := range newLabels {
+		newSet[label] = true
+	}
+
+	var added, removed []string
+
+	// Find added labels
+	for label := range newSet {
+		if !oldSet[label] {
+			added = append(added, fmt.Sprintf("`%s`", label))
+		}
+	}
+
+	// Find removed labels
+	for label := range oldSet {
+		if !newSet[label] {
+			removed = append(removed, fmt.Sprintf("`%s`", label))
+		}
+	}
+
+	sort.Strings(added)
+	sort.Strings(removed)
+
+	var changes []string
+	if len(added) > 0 {
+		changes = append(changes, fmt.Sprintf("Added labels: [%s].", strings.Join(added, ", ")))
+	}
+	if len(removed) > 0 {
+		changes = append(changes, fmt.Sprintf("Removed labels: [%s].", strings.Join(removed, ", ")))
+	}
+
+	if len(changes) == 0 {
+		// Labels exist but order changed
+		return fmt.Sprintf("Labels reordered: [%s] → [%s]", strings.Join(oldLabels, ", "), strings.Join(newLabels, ", "))
+	}
+
+	return strings.Join(changes, " <br> ")
 }
 
 func equalFloat64Slices(a, b []float64) bool {
@@ -183,76 +221,119 @@ func printMarkdownTable(diffs []MetricDiff) {
 	}
 
 	// Count changes by type
-	var added, removed, modified int
+	var added, removed, updated int
 	for _, diff := range diffs {
 		switch diff.Type {
 		case Added:
 			added++
 		case Removed:
 			removed++
-		case Modified:
-			modified++
+		case Updated:
+			updated++
 		}
 	}
 
 	fmt.Printf("## Summary\n")
 	fmt.Printf("- **Added**: %d metrics\n", added)
 	fmt.Printf("- **Removed**: %d metrics\n", removed)
-	fmt.Printf("- **Modified**: %d metrics\n", modified)
-	fmt.Printf("- **Total Changes**: %d\n\n", len(diffs))
+	fmt.Printf("- **Updated**: %d metrics\n", updated)
+	fmt.Printf("- **Total Changes**: %d metrics\n\n", len(diffs))
 
-	fmt.Println("## Detailed Changes")
+	fmt.Println("## Changed Metrics")
 	fmt.Println()
-	fmt.Println("| Change Type | Namespace | Subsystem | Metric Name | Type | Stability Level | Description |")
-	fmt.Println("|-------------|-----------|-----------|-------------|------|----------------|-------------|")
+	fmt.Println("| Metric Name | Type | Change Type | Stability Level | Description |")
+	fmt.Println("|-------------|------|-------------|----------------|-------------|")
 
 	for _, diff := range diffs {
-		namespace := diff.Key.Namespace
-		if namespace == "" {
-			namespace = "-"
-		}
+		name := diff.Key
 
-		subsystem := diff.Key.Subsystem
-		if subsystem == "" {
-			subsystem = "-"
-		}
-
-		name := diff.Key.Name
 		var metricType, stabilityLevel, description string
 
 		switch diff.Type {
 		case Added:
 			metricType = diff.NewMetric.Type
 			stabilityLevel = diff.NewMetric.StabilityLevel
-			description = truncateString(diff.NewMetric.Help, 100)
+			// description = truncateString(diff.NewMetric.Help, 100)
 		case Removed:
 			metricType = diff.OldMetric.Type
 			stabilityLevel = diff.OldMetric.StabilityLevel
-			description = truncateString(diff.OldMetric.Help, 100)
-		case Modified:
+			// description = truncateString(diff.OldMetric.Help, 100)
+		case Updated:
 			metricType = diff.NewMetric.Type
 			stabilityLevel = diff.NewMetric.StabilityLevel
-			description = strings.Join(diff.Changes, "; ")
+			description = strings.Join(diff.Changes, " <br> ")
 		}
 
 		// Escape pipe characters in description
 		description = strings.ReplaceAll(description, "|", "\\|")
 
-		fmt.Printf("| %s | %s | %s | %s | %s | %s | %s |\n",
-			diff.Type, namespace, subsystem, name, metricType, stabilityLevel, description)
+		fmt.Printf("| [%s](#%s) | %s | %s | `%s` | %s |\n",
+			name, name, metricType, diff.Type, stabilityLevel, description)
+	}
+
+	fmt.Println("## Detailed Changes")
+	fmt.Println()
+
+	for _, diff := range diffs {
+		fmt.Printf("### %s\n", diff.Key)
+
+		var old, new []byte
+		var err error
+
+		if diff.OldMetric != nil {
+			old, err = yaml.Marshal([]any{diff.OldMetric})
+			if err != nil {
+				log.Fatalf("Error marshaling old metric: %v", err)
+			}
+		}
+		if diff.NewMetric != nil {
+			new, err = yaml.Marshal([]any{diff.NewMetric})
+			if err != nil {
+				log.Fatalf("Error marshaling new metric: %v", err)
+			}
+		}
+
+		ud := unifiedDiffWithoutHeader(string(old), string(new))
+
+		fmt.Println("```diff")
+		fmt.Print(ud)
+		fmt.Println("```")
+		fmt.Println()
 	}
 }
 
-func truncateString(s string, maxLen int) string {
-	// Remove newlines and extra spaces
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.Join(strings.Fields(s), " ")
-
-	if len(s) <= maxLen {
-		return s
+func unifiedDiffWithoutHeader(old, new string) string {
+	oldFile, err := os.CreateTemp("", "")
+	if err != nil {
+		log.Fatalf("Error creating temp file: %v", err)
 	}
-	return s[:maxLen-3] + "..."
+	defer os.Remove(oldFile.Name())
+	defer oldFile.Close()
+
+	newFile, err := os.CreateTemp("", "")
+	if err != nil {
+		log.Fatalf("Error creating temp file: %v", err)
+	}
+	defer os.Remove(newFile.Name())
+	defer newFile.Close()
+
+	if _, err := oldFile.WriteString(old); err != nil {
+		log.Fatalf("Error writing to temp file: %v", err)
+	}
+	if _, err := newFile.WriteString(new); err != nil {
+		log.Fatalf("Error writing to temp file: %v", err)
+	}
+
+	output, err := exec.Command("diff", "-U999999", oldFile.Name(), newFile.Name()).CombinedOutput()
+	if exitError, ok := err.(*exec.ExitError); !ok || exitError.ExitCode() != 1 {
+		log.Fatalf("Error running diff command: %s %v", string(output), err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	if len(lines) <= 3 {
+		return ""
+	}
+	return strings.Join(lines[3:], "\n")
 }
 
 func main() {
