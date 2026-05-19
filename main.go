@@ -14,20 +14,26 @@ import (
 )
 
 type Metric struct {
-	Name              string              `yaml:"name" json:"name"`
-	Subsystem         string              `yaml:"subsystem,omitempty" json:"subsystem,omitempty"`
-	Namespace         string              `yaml:"namespace,omitempty" json:"namespace,omitempty"`
-	Help              string              `yaml:"help,omitempty" json:"help,omitempty"`
-	Type              string              `yaml:"type,omitempty" json:"type,omitempty"`
-	DeprecatedVersion string              `yaml:"deprecatedVersion,omitempty" json:"deprecatedVersion,omitempty"`
-	StabilityLevel    string              `yaml:"stabilityLevel,omitempty" json:"stabilityLevel,omitempty"`
-	Labels            []string            `yaml:"labels,omitempty" json:"labels,omitempty"`
-	Buckets           []float64           `yaml:"buckets,omitempty" json:"buckets,omitempty"`
-	Objectives        map[float64]float64 `yaml:"objectives,omitempty" json:"objectives,omitempty"`
-	AgeBuckets        uint32              `yaml:"ageBuckets,omitempty" json:"ageBuckets,omitempty"`
-	BufCap            uint32              `yaml:"bufCap,omitempty" json:"bufCap,omitempty"`
-	MaxAge            int64               `yaml:"maxAge,omitempty" json:"maxAge,omitempty"`
-	ConstLabels       map[string]string   `yaml:"constLabels,omitempty" json:"constLabels,omitempty"`
+	Name               string              `yaml:"name" json:"name"`
+	Subsystem          string              `yaml:"subsystem,omitempty" json:"subsystem,omitempty"`
+	Namespace          string              `yaml:"namespace,omitempty" json:"namespace,omitempty"`
+	Help               string              `yaml:"help,omitempty" json:"help,omitempty"`
+	Type               string              `yaml:"type,omitempty" json:"type,omitempty"`
+	DeprecatedVersion  string              `yaml:"deprecatedVersion,omitempty" json:"deprecatedVersion,omitempty"`
+	StabilityLevel     string              `yaml:"stabilityLevel,omitempty" json:"stabilityLevel,omitempty"`
+	Labels             []string            `yaml:"labels,omitempty" json:"labels,omitempty"`
+	Buckets            []float64           `yaml:"buckets,omitempty" json:"buckets,omitempty"`
+	Objectives         map[float64]float64 `yaml:"objectives,omitempty" json:"objectives,omitempty"`
+	AgeBuckets         uint32              `yaml:"ageBuckets,omitempty" json:"ageBuckets,omitempty"`
+	BufCap             uint32              `yaml:"bufCap,omitempty" json:"bufCap,omitempty"`
+	MaxAge             int64               `yaml:"maxAge,omitempty" json:"maxAge,omitempty"`
+	ConstLabels        map[string]string   `yaml:"constLabels,omitempty" json:"constLabels,omitempty"`
+	ComponentEndpoints []ComponentEndpoint `yaml:"componentEndpoints,omitempty" json:"componentEndpoints,omitempty"`
+}
+
+type ComponentEndpoint struct {
+	Component string `yaml:"component,omitempty" json:"component,omitempty"`
+	Endpoint  string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 }
 
 func metricKey(m Metric) string {
@@ -116,6 +122,9 @@ func compareMetrics(old, new map[string]Metric) []MetricDiff {
 			}
 			if reflect.DeepEqual(oldMetric.ConstLabels, newMetric.ConstLabels) == false {
 				changes = append(changes, "ConstLabels changed.")
+			}
+			if componentChange := compareComponentEndpoints(oldMetric.ComponentEndpoints, newMetric.ComponentEndpoints); componentChange != "" {
+				changes = append(changes, componentChange)
 			}
 
 			if !equalStringSlices(oldMetric.Labels, newMetric.Labels) {
@@ -218,6 +227,59 @@ func compareLabelSlices(oldLabels, newLabels []string) string {
 	if len(changes) == 0 {
 		// Labels exist but order changed
 		return fmt.Sprintf("Labels reordered: [%s] → [%s]", strings.Join(oldLabels, ", "), strings.Join(newLabels, ", "))
+	}
+
+	return strings.Join(changes, " <br> ")
+}
+
+func compareComponentEndpoints(oldEndpoints, newEndpoints []ComponentEndpoint) string {
+	oldByComponent := make(map[string]string, len(oldEndpoints))
+	newByComponent := make(map[string]string, len(newEndpoints))
+
+	for _, endpoint := range oldEndpoints {
+		oldByComponent[endpoint.Component] = endpoint.Endpoint
+	}
+	for _, endpoint := range newEndpoints {
+		newByComponent[endpoint.Component] = endpoint.Endpoint
+	}
+
+	var added, removed, changed []string
+
+	for component, endpoint := range newByComponent {
+		oldEndpoint, existed := oldByComponent[component]
+		if !existed {
+			added = append(added, fmt.Sprintf("`%s` (%s)", component, endpoint))
+			continue
+		}
+		if oldEndpoint != endpoint {
+			changed = append(changed, fmt.Sprintf("`%s`: `%s` → `%s`", component, oldEndpoint, endpoint))
+		}
+	}
+
+	for component, endpoint := range oldByComponent {
+		if _, exists := newByComponent[component]; !exists {
+			removed = append(removed, fmt.Sprintf("`%s` (%s)", component, endpoint))
+		}
+	}
+
+	sort.Strings(added)
+	sort.Strings(removed)
+	sort.Strings(changed)
+
+	var changes []string
+	if len(changed) > 0 {
+		changes = append(changes, fmt.Sprintf("Changed component endpoints: [%s].", strings.Join(changed, ", ")))
+	}
+	if len(removed) > 0 {
+		changes = append(changes, fmt.Sprintf("Removed components: [%s].", strings.Join(removed, ", ")))
+	}
+	// Kubernetes v1.36 starts populating component metadata broadly, so
+	// suppress pure additions for now to avoid flagging nearly every metric.
+	if len(changes) == 0 && len(added) > 0 {
+		return ""
+	}
+	if len(added) > 0 {
+		changes = append(changes, fmt.Sprintf("Added components: [%s].", strings.Join(added, ", ")))
 	}
 
 	return strings.Join(changes, " <br> ")
